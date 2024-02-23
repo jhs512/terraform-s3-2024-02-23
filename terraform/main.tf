@@ -291,3 +291,75 @@ resource "aws_s3_object" "object_2" {
   depends_on = [aws_s3_bucket.bucket_2]
 }
 # S3 설정 끝
+
+# CloudFront 설정 시작
+resource "aws_cloudfront_origin_access_control" "oac_1" {
+  name                              = "oac-1"
+  description                       = ""
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_distribution" "cd_1" {
+  enabled = true
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id = "origin_id_1"
+
+    forwarded_values {
+      query_string = false
+
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+  }
+
+  origin {
+    domain_name              = aws_s3_bucket.bucket_2.bucket_regional_domain_name
+    origin_path              = "/public"
+    origin_id                = "origin_id_1"
+    origin_access_control_id = aws_cloudfront_origin_access_control.oac_1.id
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+
+data "aws_iam_policy_document" "bucket_2_policy_1_statement" {
+  statement {
+    actions = ["s3:GetObject"]
+
+    resources = ["${aws_s3_bucket.bucket_2.arn}/*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.cd_1.arn]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "bucket_2_policy_1" {
+  bucket = aws_s3_bucket.bucket_2.id
+
+  policy = data.aws_iam_policy_document.bucket_2_policy_1_statement.json
+}
+# CloudFront 설정 끝
